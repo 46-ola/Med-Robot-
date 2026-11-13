@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Med Robot – simulation d'assistance chirurgicale</title>
+<style>
+:root{--bg:#e9eef0;--ink:#14232b;--mut:#5b6b73;--card:#f7fafb;--teal:#1f7a76;--red:#c8372d;--line:#c5d0d4;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1a1f;--ink:#e6eef0;--mut:#9fb1b8;--card:#162529;--teal:#4cc2bb;--red:#ff6b5e;--line:#2c4047}}
+:root[data-theme="dark"]{--bg:#0f1a1f;--ink:#e6eef0;--mut:#9fb1b8;--card:#162529;--teal:#4cc2bb;--red:#ff6b5e;--line:#2c4047}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "IBM Plex Sans",system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:2.1rem;line-height:1.1;margin:8px 0}h2{font-size:1.15rem;margin:28px 0 8px}
+p{max-width:68ch;color:var(--mut)}b{color:var(--ink)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px}
+canvas{width:100%;height:auto;display:block;touch-action:none;border-radius:4px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:600px){.row{grid-template-columns:1fr}}
+label{display:block;font-size:.9rem;margin:8px 0 2px}input[type=range]{width:100%}
+.note{border-left:3px solid var(--red);padding:4px 12px;margin-top:24px}
+ul{color:var(--mut);padding-left:20px}
+</style></head><body><main>
+<h1>Med Robot</h1>
+<p><b>Un bras chirurgical qui filtre le tremblement de la main et réduit l'amplitude des gestes, pour des opérations plus précises et plus accessibles.</b></p>
+<h2>Simulation</h2>
+<p>Déplace ton doigt ou ta souris dans le cadre de gauche (la main du chirurgien). L'instrument à droite reproduit le geste, réduit et lissé. Sans interaction, un geste automatique est joué.</p>
+<div class="row">
+<div class="box"><canvas id="a" width="400" height="400"></canvas></div>
+<div class="box"><canvas id="b" width="400" height="400"></canvas></div></div>
+<div class="row">
+<div><label>Réduction d'échelle : <span id="sv">1:3</span></label><input id="s" type="range" min="1" max="6" step="0.5" value="3"></div>
+<div><label>Filtrage du tremblement : <span id="fv">0,15</span></label><input id="f" type="range" min="0.03" max="1" step="0.01" value="0.15"></div></div>
+<p id="m"></p>
+<h2>Comment ça marche</h2>
+<ul><li><b>Réduction d'échelle</b> : la pointe de l'instrument se déplace de 1/k du mouvement de la main.</li>
+<li><b>Filtre passe-bas</b> : $y_{t+1}=y_t+\alpha\,(x_t-y_t)$ atténue les oscillations rapides (tremblement, 8 à 12 Hz).</li>
+<li><b>Point pivot (trocart)</b> : le tube de l'instrument passe toujours par le point d'incision, comme en cœlioscopie.</li></ul>
+<p class="note"><b>Précision :</b> il s'agit d'une simulation logicielle. Aucun prototype physique n'est présenté ici.</p>
+</main>
+<script>
+const A=document.getElementById('a'),B=document.getElementById('b'),ca=A.getContext('2d'),cb=B.getContext('2d');
+const S=document.getElementById('s'),F=document.getElementById('f');
+let hand={x:200,y:200},filt={x:200,y:200},ptr=null,t=0,ha=[],ta=[],n=0,eh=0,et=0;
+function pos(e){const r=A.getBoundingClientRect();return{x:(e.clientX-r.left)*400/r.width,y:(e.clientY-r.top)*400/r.height}}
+A.addEventListener('pointermove',e=>{ptr=pos(e)});A.addEventListener('pointerleave',()=>{ptr=null});
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n);
+function trace(c,pts,col,w){c.strokeStyle=col;c.lineWidth=w;c.beginPath();pts.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.stroke()}
+function loop(){t+=1/60;
+ const base=ptr||{x:200+110*Math.sin(t*.8),y:200+80*Math.sin(t*1.6)};
+ const tr=8;hand={x:base.x+tr*Math.sin(t*58)+tr*.5*Math.sin(t*71),y:base.y+tr*Math.cos(t*63)};
+ const a=+F.value,k=+S.value;filt.x+=a*(hand.x-filt.x);filt.y+=a*(hand.y-filt.y);
+ const tip={x:200+(filt.x-200)/k,y:200+(filt.y-200)/k},ref={x:200+(base.x-200)/k,y:200+(base.y-200)/k};
+ ha.push(hand);ta.push(tip);if(ha.length>140){ha.shift();ta.shift()}
+ n++;eh+=Math.hypot(hand.x-base.x,hand.y-base.y);et+=Math.hypot(tip.x-ref.x,tip.y-ref.y);
+ if(n%30==0){document.getElementById('m').textContent='Erreur moyenne due au tremblement : main '+(eh/n).toFixed(1)+' px, pointe '+(et/n).toFixed(1)+' px (échelle commune du cadre)';}
+ document.getElementById('sv').textContent='1:'+k;document.getElementById('fv').textContent=a.toFixed(2).replace('.',',');
+ ca.clearRect(0,0,400,400);cb.clearRect(0,0,400,400);
+ ca.fillStyle=css('--mut');ca.font='14px sans-serif';ca.fillText('Main du chirurgien',10,22);cb.fillStyle=css('--mut');cb.font='14px sans-serif';cb.fillText('Champ opératoire',10,22);
+ trace(ca,ha,css('--red'),2);ca.fillStyle=css('--red');ca.beginPath();ca.arc(hand.x,hand.y,6,0,7);ca.fill();
+ cb.strokeStyle=css('--line');cb.lineWidth=1;cb.beginPath();cb.arc(200,200,150,0,7);cb.stroke();
+ trace(cb,ta,css('--teal'),2);
+ const T={x:200,y:90},H={x:T.x+(T.x-tip.x)*.9,y:T.y+(T.y-tip.y)*.9};
+ cb.strokeStyle=css('--ink');cb.lineWidth=5;cb.lineCap='round';cb.beginPath();cb.moveTo(H.x,H.y);cb.lineTo(tip.x,tip.y);cb.stroke();
+ cb.fillStyle=css('--red');cb.beginPath();cb.arc(T.x,T.y,7,0,7);cb.fill();cb.fillStyle=css('--mut');cb.fillText('trocart',T.x+12,T.y+4);
+ cb.fillStyle=css('--teal');cb.beginPath();cb.arc(tip.x,tip.y,6,0,7);cb.fill();
+ requestAnimationFrame(loop)}
+loop();
+</script></body></html>
